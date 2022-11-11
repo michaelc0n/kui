@@ -20,43 +20,44 @@ func main() {
 	config := ctrl.GetConfigOrDie()
 	clientset := kubernetes.NewForConfigOrDie(config)
 
-	//namespace := "kube-system"
+	// get pods in all the namespaces by omitting namespace
+	// Or specify namespace to get pods in particular namespace
+	pods, err := clientset.CoreV1().Pods("").List(context.TODO(), v1.ListOptions{})
+	if err != nil {
+		panic(err.Error())
+	}
+	numberOfPods := fmt.Sprintf("There are %d pods in the cluster\n", len(pods.Items))
 
-	// uses the current context in kubeconfig
-	// path-to-kubeconfig -- for example, /root/.kube/config
-	//config, _ := clientcmd.BuildConfigFromFlags("", "<path-to-kubeconfig>")
-	// creates the clientset
-	//clientset, _ := kubernetes.NewForConfig(config)
-	// access the API to list pods
-	pods, _ := clientset.CoreV1().Pods("").List(context.TODO(), v1.ListOptions{})
-	fmt.Print(pods)
-	//pod_msg, _ := fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
-	pod_msg := fmt.Sprintf("There are %d pods in the cluster\n", len(pods.Items))
-	// items, err := GetDeployments(clientset, ctx, namespace)
-	// if err != nil {
-	// 	fmt.Println(err)
-	// } else {
-	// 	for _, item := range items {
-	// 		fmt.Printf("%+v\n", item)
-	// 	}
-	// }
-	hello := widget.NewLabel("KUI!")
+	namespace := namespace(*clientset)
+
+	kui := widget.NewLabel("KUI")
 	w.SetContent(container.NewVBox(
-		hello,
-		widget.NewButton("run", func() {
-			hello.SetText(pod_msg)
+		kui,
+		widget.NewButton("number of pods?", func() {
+			kui.SetText(numberOfPods)
+		}),
+
+		widget.NewButton("kube-system namespace present?", func() {
+			kui.SetText(namespace)
 		}),
 	))
 	w.ShowAndRun()
 }
 
-// func GetDeployments(clientset *kubernetes.Clientset, ctx context.Context,
-// 	namespace string) ([]v1.Deployment, error) {
+func namespace(c kubernetes.Clientset) string {
+	nsList, err := c.CoreV1().Namespaces().List(context.Background(), v1.ListOptions{})
+	//TODO create err function - replace all != nill
+	if err != nil {
+		panic(err.Error())
+	}
 
-// 	list, err := clientset.AppsV1().Deployments(namespace).
-// 		List(ctx, metav1.ListOptions{})
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return list.Items, nil
-// }
+	for _, n := range nsList.Items {
+		if n.Name == "kube-system" {
+			fmt.Println(n)
+			return n.Name
+		}
+	}
+
+	return ""
+
+}
