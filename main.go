@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
+	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -12,6 +15,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 func main() {
@@ -22,6 +26,10 @@ func main() {
 	podData := getPodData(*clientset)
 	//podNames := getPodNames(podData)
 	// create a new app
+
+	// get current cluster context
+	currentContext := getCurrentContext()
+
 	app := app.New()
 
 	// create a new window
@@ -45,22 +53,27 @@ func main() {
 	//TODO - create func to get podStatus outside of above func or from global scope
 	// will need to pass in "id widget.ListItemID"
 
+	topLabel := widget.NewLabel("Cluster Context: " + currentContext)
+	topLabel.TextStyle = fyne.TextStyle{Monospace: true}
+	topLabel.Alignment = fyne.TextAlignCenter
+	topLabel.Wrapping = fyne.TextWrapWord
+
 	// right side of split
 	rightWinContent := container.NewMax()
-	title := widget.NewLabel("...")
-	title.TextStyle = fyne.TextStyle{Bold: true}
-	title.Alignment = fyne.TextAlignCenter
-	title.Wrapping = fyne.TextWrapWord
+	title := widget.NewLabel("Application Name: ")
+	title.TextStyle = fyne.TextStyle{Bold: true, Monospace: true}
+	//title.Wrapping = fyne.TextWrapWord
 
 	// get pod status on selected
 	podStatus := widget.NewLabel("Application Status: ")
+	podStatus.TextStyle = fyne.TextStyle{Monospace: true}
 	podStatus.Wrapping = fyne.TextWrapWord
-	podStatus.TextStyle = fyne.TextStyle{Italic: true}
 
 	list.OnSelected = func(id widget.ListItemID) {
 		for i, podName := range podData {
 			if i == id {
 				title.Text = podName
+				title.Text = ("Application Name: " + podName)
 				podStatus.Text = "Application Status: " + getPodStatus(*clientset, id, data, podData)
 				podStatus.Refresh()
 				title.Refresh()
@@ -77,6 +90,7 @@ func main() {
 	// update pod list data
 	refresh := widget.NewButton("Refresh", func() {
 		podData = reloadPodData(*clientset, data)
+
 	})
 
 	//TODO: update right side with pod detail// initially pod.Status
@@ -85,9 +99,22 @@ func main() {
 
 	// podData(list) left side, podData detail right side
 	split := container.NewHSplit(list, rightContainer)
-	split.Offset = 0.5
+	split.Offset = 0.4
 
-	win.SetContent(container.NewBorder(nil, refresh, nil, nil, split))
+	go func() {
+		for range time.Tick(time.Second * 5) {
+			currentContext = getCurrentContext()
+			//topLabel = widget.NewLabel(currentContext)
+			fmt.Println(topLabel.Text)
+			if strings.Contains(topLabel.Text, currentContext) {
+				continue
+			} else {
+				topLabel.SetText("Cluster Context: " + currentContext)
+			}
+		}
+	}()
+
+	win.SetContent(container.NewBorder(topLabel, refresh, nil, nil, split))
 	win.ShowAndRun()
 }
 
@@ -148,3 +175,20 @@ func init() {
 	WarningLogger = log.New(file, "WARNING: ", log.Ldate|log.Ltime|log.Lshortfile)
 	ErrorLogger = log.New(file, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
 }
+
+//TODO parse cluster context name to drop everything after "anthos"
+func getCurrentContext() string {
+	// get current context
+	clientConfig, _ := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		clientcmd.NewDefaultClientConfigLoadingRules(),
+		&clientcmd.ConfigOverrides{
+			CurrentContext: "",
+		}).RawConfig()
+	return clientConfig.CurrentContext
+}
+
+//TODO catch panic when cluster context not available:
+// panic: Get "https://1.2.3.4:443/api/v1/pods": dial tcp 1.2.3.4:443: i/o timeout
+
+//TODO test if kubeConfig not accessible/ not set
+//TODO test if clusterContext not set / empty
