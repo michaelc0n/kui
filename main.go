@@ -202,15 +202,15 @@ func main() {
 	win.ShowAndRun()
 }
 
-func getPodTabData(widgetLabelName string) (widgeNameLabel *widget.Label, widgeName *widget.Label, widgetNameScroll *container.Scroll) {
-	widgeNameLabel = widget.NewLabel(widgetLabelName)
-	widgeNameLabel.TextStyle = fyne.TextStyle{Monospace: true}
-	widgeName = widget.NewLabel("")
-	widgeName.TextStyle = fyne.TextStyle{Monospace: true}
-	widgeName.Wrapping = fyne.TextWrapBreak
-	widgetNameScroll = container.NewScroll(widgeName)
+func getPodTabData(widgetLabelName string) (widgetNameLabel *widget.Label, widgetName *widget.Label, widgetNameScroll *container.Scroll) {
+	widgetNameLabel = widget.NewLabel(widgetLabelName)
+	widgetNameLabel.TextStyle = fyne.TextStyle{Monospace: true}
+	widgetName = widget.NewLabel("")
+	widgetName.TextStyle = fyne.TextStyle{Monospace: true}
+	widgetName.Wrapping = fyne.TextWrapBreak
+	widgetNameScroll = container.NewScroll(widgetName)
 	widgetNameScroll.SetMinSize(fyne.Size{Height: 100})
-	return widgeNameLabel, widgeName, widgetNameScroll
+	return widgetNameLabel, widgetName, widgetNameScroll
 }
 
 // get pod names to populate initial list
