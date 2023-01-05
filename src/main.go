@@ -1,13 +1,7 @@
 package main
 
 import (
-	"bytes"
-	"context"
-	"fmt"
 	"image/color"
-	"io"
-	"log"
-	"os"
 	"strings"
 	"time"
 
@@ -15,13 +9,8 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
-	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 func main() {
@@ -41,17 +30,8 @@ func main() {
 	// resize fyne app window
 	win.Resize(fyne.NewSize(1200, 700)) // first width, then height
 
-	// list binding
-	data := binding.BindStringList(
-		&podData,
-	)
-	list := widget.NewListWithData(data,
-		func() fyne.CanvasObject {
-			return widget.NewLabel("template")
-		},
-		func(i binding.DataItem, o fyne.CanvasObject) {
-			o.(*widget.Label).Bind(i.(binding.String))
-		})
+	// list binding, bind pod list data(podData) to data
+	data, list := getListData(&podData)
 
 	// top window label
 	topLabel := canvas.NewText(("Cluster Context: " + currentContext), color.NRGBA{R: 57, G: 112, B: 228, A: 255})
@@ -61,12 +41,11 @@ func main() {
 	// right side of split
 	rightWinContent := container.NewMax()
 	title := widget.NewLabel("Select application (pod)...")
-	title.TextStyle = fyne.TextStyle{Bold: true, Italic: true, Monospace: true}
+	title.TextStyle = fyne.TextStyle{Monospace: true}
 
 	// pod status
 	podStatus := widget.NewLabel("")
 	podStatus.TextStyle = fyne.TextStyle{Monospace: true}
-	podStatus.Wrapping = fyne.TextWrapWord
 
 	// get pod labels, annotations, events for tabs
 	podLabelsLabel, podLabels, podLabelsScroll := getPodTabData("Labels")
@@ -81,7 +60,7 @@ func main() {
 	)
 
 	// setup pod log tabs
-	podLogsLabel := widget.NewLabel("Select container log... ")
+	podLogsLabel := widget.NewLabel("")
 	podLogsLabel.TextStyle = fyne.TextStyle{Monospace: true}
 	defaultTabItem := container.NewTabItem("Logs", podLogsLabel)
 	podLogTabs := container.NewAppTabs(defaultTabItem)
@@ -122,8 +101,6 @@ func main() {
 				strNewPodEvents := strings.Join(newPodEvents, "\n")
 				podEvents.Text = strNewPodEvents
 				podEvents.Refresh()
-
-				fmt.Print(newContainers)
 
 				for _, tabContainerName := range newContainers {
 					podLogStream := getPodLogs(*clientset, newPodNamespace, selectedPod, tabContainerName)
@@ -200,115 +177,6 @@ func main() {
 
 	win.SetContent(container.NewBorder(topContent, refresh, nil, nil, split))
 	win.ShowAndRun()
-}
-
-func getPodTabData(widgetLabelName string) (widgetNameLabel *widget.Label, widgetName *widget.Label, widgetNameScroll *container.Scroll) {
-	widgetNameLabel = widget.NewLabel(widgetLabelName)
-	widgetNameLabel.TextStyle = fyne.TextStyle{Monospace: true}
-	widgetName = widget.NewLabel("")
-	widgetName.TextStyle = fyne.TextStyle{Monospace: true}
-	widgetName.Wrapping = fyne.TextWrapBreak
-	widgetNameScroll = container.NewScroll(widgetName)
-	widgetNameScroll.SetMinSize(fyne.Size{Height: 100})
-	return widgetNameLabel, widgetName, widgetNameScroll
-}
-
-// get pod names to populate initial list
-func getPodData(c kubernetes.Clientset) (podData []string) {
-	pods, err := c.CoreV1().Pods("").List(context.TODO(), v1.ListOptions{})
-	if err != nil {
-		panic(err.Error())
-	}
-
-	for _, pod := range pods.Items {
-		podData = append(podData, pod.Name)
-	}
-	return podData
-}
-
-func getPodDetail(c kubernetes.Clientset, listItemID int, selectedPod string) (string, string, string, string, string, string, []string) {
-	pods, err := c.CoreV1().Pods("").List(context.TODO(), v1.ListOptions{})
-	if err != nil {
-		panic(err.Error())
-	}
-	for _, pod := range pods.Items {
-		if pod.Name == selectedPod {
-			var containers []string
-			for _, container := range pod.Spec.Containers {
-				containers = append(containers, container.Name)
-			}
-			podCreationTime := pod.GetCreationTimestamp()
-			age := time.Since(podCreationTime.Time).Round(time.Second)
-
-			return string(pod.Status.Phase), age.String(), string(pod.Namespace), convertMapToString(pod.Labels), convertMapToString(pod.Annotations),
-				pod.Spec.NodeName, containers
-		}
-	}
-	return "", "", "", "", "", "", []string{}
-}
-
-// moving logging to diff file and only log to stdout not file
-var (
-	WarningLogger *log.Logger
-	InfoLogger    *log.Logger
-	ErrorLogger   *log.Logger
-)
-
-func init() {
-	file, err := os.OpenFile("logs.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	InfoLogger = log.New(file, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
-	WarningLogger = log.New(file, "WARNING: ", log.Ldate|log.Ltime|log.Lshortfile)
-	ErrorLogger = log.New(file, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
-}
-
-//TODO parse cluster context name to drop unnecessary text
-func getCurrentContext() string {
-	// get current context
-	clientConfig, _ := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		clientcmd.NewDefaultClientConfigLoadingRules(),
-		&clientcmd.ConfigOverrides{
-			CurrentContext: "",
-		}).RawConfig()
-	return clientConfig.CurrentContext
-}
-
-// used by labels, annotations, ...
-func convertMapToString(m map[string]string) string {
-	b := new(bytes.Buffer)
-	for key, value := range m {
-		fmt.Fprintf(b, "%s=\"%s\"\n", key, value)
-	}
-	return b.String()
-}
-
-func getPodEvents(c kubernetes.Clientset, selectedPod string) (podEvents []string) {
-	events, _ := c.CoreV1().Events("").List(context.TODO(), v1.ListOptions{FieldSelector: fmt.Sprintf("involvedObject.name=%s", selectedPod), TypeMeta: v1.TypeMeta{Kind: "Pod"}})
-	for _, item := range events.Items {
-		podEvents = append(podEvents, "~> "+item.EventTime.Time.Format("2006-01-02 15:04:05")+", "+item.Message)
-	}
-	return podEvents
-}
-
-func getPodLogs(c kubernetes.Clientset, podNamespace string, selectedPod string, containerName string) (podLog string) {
-	podLogReq := c.CoreV1().Pods(podNamespace).GetLogs(selectedPod, &corev1.PodLogOptions{Container: containerName})
-	podStream, err := podLogReq.Stream(context.TODO())
-	if err != nil {
-		return fmt.Sprintf("error opening pod log stream, %v", err)
-	}
-	defer podStream.Close()
-
-	buf := new(bytes.Buffer)
-	_, err = io.Copy(buf, podStream)
-	if err != nil {
-		return "error copying pod log stream to buf"
-	}
-	podLog = buf.String()
-
-	return podLog
 }
 
 //TODO catch panic when cluster context not available:
